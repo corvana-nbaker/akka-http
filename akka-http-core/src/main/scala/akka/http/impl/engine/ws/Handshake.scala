@@ -111,7 +111,7 @@ private[http] object Handshake {
               require(
                 subprotocol.forall(chosen ⇒ clientSupportedSubprotocols.contains(chosen)),
                 s"Tried to choose invalid subprotocol '$subprotocol' which wasn't offered by the client: [${requestedProtocols.mkString(", ")}]")
-              buildResponse(key.get, handler, subprotocol)
+              buildResponse(key.get, handler, subprotocol, clientSupportedSubprotocols)
             }
 
             def handleFrames(handlerFlow: Graph[FlowShape[FrameEvent, FrameEvent], Any], subprotocol: Option[String]): HttpResponse =
@@ -144,10 +144,14 @@ private[http] object Handshake {
           concatenated value to obtain a 20-byte value and base64-
           encoding (see Section 4 of [RFC4648]) this 20-byte hash.
     */
-    def buildResponse(key: `Sec-WebSocket-Key`, handler: Either[Graph[FlowShape[FrameEvent, FrameEvent], Any], Graph[FlowShape[Message, Message], Any]], subprotocol: Option[String]): HttpResponse =
+    def buildResponse(key: `Sec-WebSocket-Key`, handler: Either[Graph[FlowShape[FrameEvent, FrameEvent], Any], Graph[FlowShape[Message, Message], Any]], subprotocol: Option[String], clientSubProtocols: Seq[String]): HttpResponse =
       HttpResponse(
         StatusCodes.SwitchingProtocols,
         subprotocol.map(p ⇒ `Sec-WebSocket-Protocol`(Seq(p))).toList :::
+          (subprotocol match {
+            case Some(_) ⇒ List.empty // If the server has a list of accepted protocols matches with client are added in the previous mapping
+            case None    ⇒ clientSubProtocols.take(1).map(p ⇒ `Sec-WebSocket-Protocol`(clientSubProtocols)).toList // If server is accepting all client protocols, send them back (Chrome requirement)
+          }) :::
           List(
             UpgradeHeader,
             ConnectionUpgradeHeader,
